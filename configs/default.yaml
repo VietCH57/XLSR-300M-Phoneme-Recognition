@@ -1,0 +1,67 @@
+# Default config for 1x RTX 4090 (24 GB). Any key can be overridden on the CLI: --key value
+# Sections are only for readability; keys are flat.
+
+data:
+  train_csv: /home/mdd/lamnh/MDD-2026/data/stage2_combined/server/fullnative_el2a_train_ctc.csv
+  dev_csv: /home/mdd/lamnh/MDD-2026/data/stage2_combined/server/fullnative_el2a_dev_ctc.csv
+  vocab_path: configs/vocab.json
+  domains: null              # null = all; subset of [native_en, native_vi, l2a, el_easy] (train + dev)
+  path_map: []               # e.g. ["/old/prefix=/new/prefix"]
+  cache_dir: cache
+  sample_rate: 16000
+  min_audio_seconds: 0.3
+  max_audio_seconds: 30.0    # train only
+  blank_token: "[PAD]"
+  unk_token: "[UNK]"
+  train_unk_policy: keep     # literal [UNK] in train transcripts: keep | drop_token | drop_utt
+
+model:
+  pretrained_name: facebook/wav2vec2-xls-r-300m
+  freeze_feature_encoder: true
+  freeze_transformer_steps: 0
+  gradient_checkpointing: true
+  attention_dropout: 0.1
+  hidden_dropout: 0.1
+  activation_dropout: 0.0
+  feat_proj_dropout: 0.0
+  final_dropout: 0.1
+  layerdrop: 0.05
+  mask_time_prob: 0.05
+  mask_time_length: 10
+  mask_feature_prob: 0.0
+  mask_feature_length: 64
+  ctc_reduction: mean
+
+train:
+  output_dir: runs/default
+  seed: 42
+  max_steps: 20000
+  max_epochs: 1000
+  max_batch_seconds: 200.0
+  max_batch_size: 64
+  grad_accum_steps: 1
+  lr: 5.0e-5
+  head_lr: 5.0e-4
+  weight_decay: 0.0
+  adam_beta1: 0.9
+  adam_beta2: 0.98
+  adam_eps: 1.0e-8
+  scheduler: linear          # linear | cosine | tri_stage | constant
+  warmup_steps: 1000
+  tri_stage_hold_ratio: 0.4
+  final_lr_scale: 0.05
+  max_grad_norm: 1.0
+  precision: bf16
+  allow_tf32: true
+  domain_weights: []         # e.g. ["l2a=2", "el_easy=4"]
+  num_workers: 6
+  bucket_size_multiplier: 100
+
+eval:
+  log_every: 50
+  eval_every: 1000
+  eval_max_batch_seconds: 400.0
+  select_metric: per/ALL
+  save_top_k: 3
+  early_stopping_patience: 0
+  resume_from: null

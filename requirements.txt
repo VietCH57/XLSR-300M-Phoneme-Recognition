@@ -1,0 +1,12 @@
+# PyTorch: install the CUDA build matching your driver first, e.g.
+#   pip install torch torchaudio --index-url https://download.pytorch.org/whl/cu128
+torch>=2.1
+torchaudio>=2.1
+transformers>=4.40
+soundfile>=0.12      # libsndfile >= 1.1 reads wav / flac / mp3 / NIST SPHERE (TIMIT)
+numpy
+pandas
+pyyaml
+rapidfuzz>=3.0       # fast edit-distance alignment for PER (pure-Python fallback exists)
+scipy                # resampling fallback
+pytest
