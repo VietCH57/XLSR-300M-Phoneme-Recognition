@@ -31,6 +31,7 @@ from phonrec.data import PhonemeTokenizer, build_dataset  # noqa: E402
 from phonrec.engine import evaluate, make_eval_loader  # noqa: E402
 from phonrec.models import XLSRPhonemeCTC  # noqa: E402
 from phonrec.utils import get_device, setup_logging  # noqa: E402
+from phonrec.utils.misc import limit_gpu_memory  # noqa: E402
 
 logger = logging.getLogger("infer")
 
@@ -46,6 +47,7 @@ def parse_args(argv=None) -> argparse.Namespace:
     p.add_argument("--max_batch_size", type=int, default=64)
     p.add_argument("--num_workers", type=int, default=6)
     p.add_argument("--precision", default="bf16", choices=["bf16", "fp16", "fp32"])
+    p.add_argument("--gpu_memory_fraction", type=float, default=0.0, help="VRAM cap (0 = none)")
     return p.parse_args(argv)
 
 
@@ -58,6 +60,7 @@ def main(argv=None) -> None:
     logger.info("Command: %s", " ".join(shlex.quote(a) for a in sys.argv))
 
     device = get_device()
+    limit_gpu_memory(args.gpu_memory_fraction, device)
     with open(ckpt / "head_config.json") as f:
         blank_id = json.load(f)["blank_id"]
     vocab = json.load(open(ckpt / "vocab.json"))

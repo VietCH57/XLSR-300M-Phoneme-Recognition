@@ -34,6 +34,7 @@ from phonrec.data import (  # noqa: E402
 )
 from phonrec.engine import evaluate, make_eval_loader  # noqa: E402
 from phonrec.models import XLSRPhonemeCTC  # noqa: E402
+from phonrec.utils.misc import DutyCycle, gpu_mem_gb, limit_gpu_memory  # noqa: E402
 from phonrec.utils import (  # noqa: E402
     CheckpointManager,
     autocast_ctx,
@@ -93,6 +94,13 @@ def main(argv=None) -> None:
         torch.backends.cuda.matmul.allow_tf32 = cfg.allow_tf32
         torch.backends.cudnn.allow_tf32 = cfg.allow_tf32
         logger.info("Device: %s (%s)", device, torch.cuda.get_device_name(0))
+        limit_gpu_memory(cfg.gpu_memory_fraction, device)
+        if cfg.gpu_memory_fraction:
+            total_gb = torch.cuda.get_device_properties(device).total_memory / 2**30
+            logger.info("GPU memory capped at %.0f%% (%.1f GiB of %.1f GiB)",
+                        100 * cfg.gpu_memory_fraction, cfg.gpu_memory_fraction * total_gb, total_gb)
+        if cfg.gpu_duty_pct < 100:
+            logger.info("GPU duty cycle limited to %d%% during training", cfg.gpu_duty_pct)
     else:
         logger.warning("CUDA not available - training on CPU")
     if cfg.precision == "bf16" and device.type == "cuda" and not torch.cuda.is_bf16_supported():
@@ -171,10 +179,12 @@ def main(argv=None) -> None:
     t_start = time.time()
     last_eval_step = -1
     stop = False
+    duty = DutyCycle(cfg.gpu_duty_pct, device)
 
     while step < cfg.max_steps and epoch < cfg.max_epochs and not stop:
         train_sampler.set_epoch(epoch)
         for batch in train_loader:
+            duty.start()
             inputs = batch["input_values"].to(device, non_blocking=True)
             mask = batch["attention_mask"].to(device, non_blocking=True)
             labels = batch["labels"].to(device, non_blocking=True)
@@ -193,6 +203,7 @@ def main(argv=None) -> None:
                 win["skipped"] += 1
                 if device.type == "cuda":
                     torch.cuda.empty_cache()
+                duty.stop()
                 continue
 
             micro += 1
@@ -200,6 +211,7 @@ def main(argv=None) -> None:
             win["n"] += 1
             win["audio_sec"] += float(mask.sum()) / cfg.sample_rate
             if micro < cfg.grad_accum_steps:
+                duty.stop()
                 continue
             micro = 0
 
@@ -210,12 +222,15 @@ def main(argv=None) -> None:
                 logger.warning("Non-finite gradient norm at step %d, skipping update", step)
                 optimizer.zero_grad(set_to_none=True)
                 win["skipped"] += 1
+                duty.stop()
                 continue
             scaler.step(optimizer)
             scaler.update()
             scheduler.step()
             optimizer.zero_grad(set_to_none=True)
             step += 1
+            duty.stop()
+            duty.throttle()
 
             if backbone_frozen and step >= cfg.freeze_transformer_steps:
                 backbone_frozen = False
@@ -227,9 +242,9 @@ def main(argv=None) -> None:
                 lrs = scheduler.get_last_lr()
                 logger.info(
                     "step %d/%d | ep %d | loss %.4f | grad %.2f | lr %.2e/%.2e | %.0f audio-s/s | "
-                    "skipped %d | elapsed %s",
+                    "peak mem %.1f GiB | skipped %d | elapsed %s",
                     step, cfg.max_steps, epoch, win["loss"] / max(win["n"], 1), float(grad_norm),
-                    lrs[0], lrs[-1], win["audio_sec"] / max(dt, 1e-6), win["skipped"],
+                    lrs[0], lrs[-1], win["audio_sec"] / max(dt, 1e-6), gpu_mem_gb(device), win["skipped"],
                     format_seconds(time.time() - t_start),
                 )
                 win = {"loss": 0.0, "n": 0, "audio_sec": 0.0, "skipped": 0, "t": time.time()}

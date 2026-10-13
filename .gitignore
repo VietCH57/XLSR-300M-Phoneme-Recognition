@@ -1,0 +1,75 @@
+# ===================== Project artifacts =====================
+# Audio / duration cache (prepare_audio.py, data_stats.py, train.py)
+/cache/
+/cache_*/
+# Training runs: logs, checkpoints, inference outputs
+/runs/
+/outputs/
+# Model weights & training state anywhere in the tree
+*.pt
+*.pth
+*.bin
+*.ckpt
+*.safetensors
+# Local data / audio that should never be committed (root only: src/phonrec/data is code!)
+/data/
+*.wav
+*.WAV
+*.flac
+*.mp3
+*.sph
+# Logs
+*.log
+/logs/
+# Hugging Face local cache (if HF_HOME points inside the repo)
+.hf_cache/
+hf_cache/
+
+# ===================== Python =====================
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+# Packaging
+build/
+dist/
+*.egg-info/
+.eggs/
+*.egg
+wheels/
+pip-wheel-metadata/
+# Virtual environments
+venv/
+venv*/
+.venv/
+env/
+.env/
+ENV/
+# Test / coverage / type checking
+.pytest_cache/
+.coverage
+.coverage.*
+htmlcov/
+coverage.xml
+.mypy_cache/
+.ruff_cache/
+.pyre/
+.tox/
+.nox/
+# Jupyter
+.ipynb_checkpoints/
+*.ipynb_checkpoints
+
+# ===================== Editors / OS =====================
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.DS_Store
+Thumbs.db
+
+# ===================== Secrets =====================
+.env
+.env.*
+!.env.example

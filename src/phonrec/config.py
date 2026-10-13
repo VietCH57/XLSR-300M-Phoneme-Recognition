@@ -90,6 +90,10 @@ class Config:
     domain_weights: List[str] = field(default_factory=list)
     num_workers: int = 6
     bucket_size_multiplier: int = 100
+    # Shared-GPU etiquette: cap this process' VRAM (fraction of the card, 0 = no cap) and
+    # GPU time (percentage of wall time spent computing during training, 100 = no throttling)
+    gpu_memory_fraction: float = 0.0
+    gpu_duty_pct: int = 100
 
     # ------------------------------------------------------ eval / checkpoint
     log_every: int = 50
@@ -116,6 +120,10 @@ class Config:
             raise ValueError("train_unk_policy must be keep|drop_token|drop_utt")
         if self.ctc_reduction not in ("mean", "sum"):
             raise ValueError("ctc_reduction must be mean|sum")
+        if not 0.0 <= self.gpu_memory_fraction <= 1.0:
+            raise ValueError("gpu_memory_fraction must be in [0, 1]")
+        if not 1 <= self.gpu_duty_pct <= 100:
+            raise ValueError("gpu_duty_pct must be in [1, 100]")
         if self.grad_accum_steps < 1:
             raise ValueError("grad_accum_steps must be >= 1")
         if not (self.select_metric == "loss" or self.select_metric.startswith("per/")):

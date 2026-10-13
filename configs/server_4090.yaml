@@ -1,0 +1,77 @@
+# Recommended config for the shared RTX 4090 server (internal-training-han).
+# Data: 21.5k train utts / 33.1 h, 3,991 dev utts (4 domains).
+#
+# Recipe follows the fairseq wav2vec 2.0 / XLS-R fine-tuning setup for low-resource data
+# (tri-stage LR, short head-only warm start, stronger SpecAugment than the HF default),
+# with dynamic batching instead of a fixed number of utterances per batch.
+#
+# Budget: 160 s of audio per update -> ~775 updates/epoch; 25k updates ~= 32 epochs.
+# Any key can be overridden on the CLI, e.g. --lr 3e-5 --domains native_en l2a el_easy
+
+data:
+  train_csv: /home/mdd/lamnh/MDD-2026/data/stage2_combined/server/fullnative_el2a_train_ctc.csv
+  dev_csv: /home/mdd/lamnh/MDD-2026/data/stage2_combined/server/fullnative_el2a_dev_ctc.csv
+  vocab_path: configs/vocab.json
+  domains: null              # all 4 domains; e.g. [native_en, l2a, el_easy] to train on a subset
+  path_map: []
+  cache_dir: cache           # run scripts from the repo root (run_train_server.sh does)
+  sample_rate: 16000
+  min_audio_seconds: 0.3
+  max_audio_seconds: 30.0    # drops 6 train utts (native_vi > 30 s); dev/test never filtered
+  blank_token: "[PAD]"
+  unk_token: "[UNK]"
+  train_unk_policy: keep
+
+model:
+  pretrained_name: facebook/wav2vec2-xls-r-300m
+  freeze_feature_encoder: true
+  freeze_transformer_steps: 1000   # head-only warm start: avoids random-head gradients hitting XLS-R
+  gradient_checkpointing: true
+  attention_dropout: 0.1
+  hidden_dropout: 0.1
+  activation_dropout: 0.05
+  feat_proj_dropout: 0.05
+  final_dropout: 0.1
+  layerdrop: 0.05
+  mask_time_prob: 0.25       # SpecAugment (time); HF default 0.05 is weak for ~30 h of data
+  mask_time_length: 10
+  mask_feature_prob: 0.05    # SpecAugment (channel)
+  mask_feature_length: 64
+  ctc_reduction: mean
+
+train:
+  output_dir: runs/server_4090
+  seed: 42
+  max_steps: 25000
+  max_epochs: 1000
+  max_batch_seconds: 160.0   # fits the 12 GiB share (bf16 + grad. checkpointing); check "peak mem" in the log
+  max_batch_size: 64
+  grad_accum_steps: 1
+  lr: 5.0e-5                 # XLS-R backbone
+  head_lr: 5.0e-4            # linear head (10x)
+  weight_decay: 0.0
+  adam_beta1: 0.9
+  adam_beta2: 0.98
+  adam_eps: 1.0e-8
+  scheduler: tri_stage       # 10% warmup -> hold 40% -> exponential decay to 5% of peak
+  warmup_steps: 2500
+  tri_stage_hold_ratio: 0.4
+  final_lr_scale: 0.05
+  max_grad_norm: 1.0
+  precision: bf16
+  allow_tf32: true
+  domain_weights: []         # second experiment: ["l2a=2", "el_easy=3"]
+  num_workers: 6             # 8 vCPU: 6 loader workers + main process
+  bucket_size_multiplier: 100
+  # Shared GPU: cap this process at 50% of the 4090's VRAM (~12 GiB); no GPU-time throttling
+  gpu_memory_fraction: 0.5
+  gpu_duty_pct: 100
+
+eval:
+  log_every: 50
+  eval_every: 1000           # ~1.3 epochs
+  eval_max_batch_seconds: 300.0
+  select_metric: per/ALL
+  save_top_k: 2              # + best/ + last/ (~1.3 GB each)
+  early_stopping_patience: 8
+  resume_from: null
